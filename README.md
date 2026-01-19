@@ -2,6 +2,9 @@
 
 A locally hosted AI search engine that performs real-time web searches, scrapes content concurrently, and generates answers using **Mistral-7B-Instruct-v0.2** (via Hugging Face API).
 
+## Deployed Here 
+
+- **https://ai-search-engine-wvrmpdyaxhtkgc2opetckm.streamlit.app/**
 
 ##  Features
 
