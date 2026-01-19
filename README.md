@@ -1,15 +1,15 @@
-# 🔎 Real-Time AI Search Engine
+#  AI Search Engine
 
 A locally hosted AI search engine that performs real-time web searches, scrapes content concurrently, and generates answers using **Mistral-7B-Instruct-v0.2** (via Hugging Face API).
 
 
-## ✨ Features
+##  Features
 
 - **Real-Time Search**: Fetches live results using DuckDuckGo.
 - **Concurrent Scraping**: Scrapes 5+ sources in parallel for fast context retrieval.
 - **Smart Answering**: Uses Mistral-7B (32k context) to answer questions based on searched content.
 
-## 🛠️ Installation
+##  Installation
 
 1. **Clone the repository**:
    ```bash
@@ -28,14 +28,14 @@ A locally hosted AI search engine that performs real-time web searches, scrapes 
    HF_TOKEN = "your_huggingface_token_here"
    ```
 
-## 🚀 Usage
+##  Usage
 
 Run the Streamlit app:
 ```bash
 streamlit run app.py
 ```
 
-## 🧩 Tech Stack
+##  Tech Stack
 
 - **Frontend**: Streamlit (Python)
 - **Search**: `ddgs` (DuckDuckGo Search)
