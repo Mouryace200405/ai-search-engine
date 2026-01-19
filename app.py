@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 from huggingface_hub import InferenceClient
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="AI Search Engine", page_icon="🔎")
@@ -16,8 +17,8 @@ st.markdown("""
 # --- SECRETS & API CONFIG ---
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
-# Mistral model for answering
-LLM_REPO_ID = "HuggingFaceH4/zephyr-7b-beta"
+# Mistral model for answering (32k context)
+LLM_REPO_ID = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # --- LOGIC FUNCTIONS ---
 
@@ -41,23 +42,39 @@ def scrape_url(url):
         # heavy cleaning
         lines = [line.strip() for line in text.splitlines() if len(line.strip()) > 20]
         clean_text = ' '.join(lines)
-        return clean_text[:2000] # Limit per site
+        return clean_text[:5000] # Limit per site (increased for Mistral)
     except Exception as e:
         return ""
 
 def run_ai_search(user_query):
-    # Step 1: Search for 2 best URLs
+    # Step 1: Search for 5 best URLs
     with st.status("🔍 Searching Web...", expanded=True) as status:
         with DDGS() as ddgs:
-            search_results = [r for r in ddgs.text(user_query, max_results=2)]
+            search_results = [r for r in ddgs.text(user_query, max_results=5)]
 
-        # Step 2: Scrape and collect limited text
+        # Step 2: Parallel scraping
         best_context = ""
-        for res in search_results:
-            st.write(f"Scraping: {res['title']}")
-            text = scrape_url(res['href'])
-            # Take only the first 1000 characters from each site
-            best_context += f"Source: {res['title']}\nContent: {text[:1000]}\n\n"
+        st.write(f"Scraping {len(search_results)} sites concurrently...")
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Create a map of future -> result_metadata
+            future_to_url = {
+                executor.submit(scrape_url, res['href']): res 
+                for res in search_results
+            }
+            
+            for future in as_completed(future_to_url):
+                res = future_to_url[future]
+                try:
+                    text = future.result()
+                    if text:
+                        st.write(f"✅ Downloaded: {res['title']}")
+                        # Take only the first 4000 characters from each site to fit in context
+                        best_context += f"Source: {res['title']}\nContent: {text[:4000]}\n\n"
+                    else:
+                        st.write(f"❌ Failed/Empty: {res['title']}")
+                except Exception as e:
+                    st.write(f"❌ Error scraping {res['title']}: {e}")
 
         status.update(label="Analysis Complete!", state="complete", expanded=False)
 
@@ -65,7 +82,7 @@ def run_ai_search(user_query):
 
 # --- USER INTERFACE ---
 st.title("🔎 Real-Time AI Search Engine")
-st.caption("Powered by Zephyr-7B (Generation)")
+st.caption("Powered by Mistral-7B-v0.2 (32k Context)")
 
 user_input = st.text_input("Enter your question:", placeholder="e.g. What is the latest news about SpaceX Starship?")
 
@@ -82,7 +99,7 @@ if user_input:
         ]
 
         with st.chat_message("assistant"):
-            response = client.chat_completion(messages, model=LLM_REPO_ID, max_tokens=512)
+            response = client.chat_completion(messages, model=LLM_REPO_ID, max_tokens=1024)
             st.write(response.choices[0].message.content)
 
         st.sidebar.header("Sources Found")
