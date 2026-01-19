@@ -2,23 +2,18 @@
 
 A locally hosted AI search engine that performs real-time web searches, scrapes content concurrently, and generates answers using **Mistral-7B-Instruct-v0.2** (via Hugging Face API).
 
-![App Screenshot](https://i.imgur.com/screenshot-placeholder.png)
 
 ## ✨ Features
 
 - **Real-Time Search**: Fetches live results using DuckDuckGo.
 - **Concurrent Scraping**: Scrapes 5+ sources in parallel for fast context retrieval.
 - **Smart Answering**: Uses Mistral-7B (32k context) to answer questions based on searched content.
-- **Dual Theme Support**: 
-  - **Tokyo Night (Dark)**: Deep blue/purple aesthetic for dark mode.
-  - **Clean Light (Default)**: Standard Streamlit light theme for high contrast.
-- **Polished UI**: Perplexity-style layout with source cards and justified text.
 
 ## 🛠️ Installation
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/ai-search-engine.git
+   git clone https://github.com/Mouryace200405/ai-search-engine.git
    cd ai-search-engine
    ```
 
@@ -46,8 +41,5 @@ streamlit run app.py
 - **Search**: `ddgs` (DuckDuckGo Search)
 - **Scraping**: `requests`, `beautifulsoup4`
 - **LLM**: `huggingface_hub` (Mistral-7B)
-- **Styling**: Custom CSS (Tokyo Night Theme)
 
-## 📄 License
 
-MIT
