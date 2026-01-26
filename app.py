@@ -5,109 +5,142 @@ from ddgs import DDGS
 from huggingface_hub import InferenceClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-st.set_page_config(page_title="Web Search Bot", page_icon="🔎", layout="wide")
-
-
-
+# ---------------- CONFIG ----------------
+st.set_page_config(
+    page_title="Web Search AI",
+    page_icon="🔎",
+    layout="wide"
+)
 
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
+MODEL_PRIMARY = "mistralai/Mistral-7B-Instruct-v0.2"
+MODEL_FALLBACK = "HuggingFaceH4/zephyr-7b-beta"
 
-LLM_REPO_ID = "mistralai/Mistral-7B-Instruct-v0.2"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+# ---------------- UI ----------------
+st.title("Web Search Bot")
+st.caption("• Open Models • Limited context Length")
 
+query = st.text_input(
+    "Ask anything",
+    placeholder="What is the latest update on SpaceX Starship?"
+)
+with st.sidebar:
+    st.header("⚙️ Settings")
+    MAX_RESULTS = st.slider(
+        "Search results",
+        min_value=3,
+        max_value=8,      
+        value=5
+    )
+    MAX_CONTEXT_CHARS = st.slider(
+        "Context per site (chars)",
+        min_value=500,
+        max_value=2000,  
+        value=1500
+    )
+    SHOW_RAW = st.checkbox("Show scraped context")
 
-def scrape_url(url):
-    
+# ---------------- SCRAPING ----------------
+def scrape_url(url: str) -> str:
     try:
-        response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-       
-        for script in soup(["script", "style", "nav", "footer", "header", "form", "svg"]):
-            script.decompose()
-            
-       
-        main_content = soup.find('main') or soup.find('article') or soup.find('body')
-        if main_content:
-            text = main_content.get_text(separator=' ')
-        else:
-            text = soup.get_text(separator=' ')
-            
-      
-        lines = [line.strip() for line in text.splitlines() if len(line.strip()) > 20]
-        clean_text = ' '.join(lines)
-        return clean_text[:5000] 
-    except Exception as e:
-        return ""
+        r = requests.get(url, headers=HEADERS, timeout=8)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-def run_ai_search(user_query):
-    
-    with st.status("🔍 Searching Web...", expanded=True) as status:
-        with DDGS() as ddgs:
-            search_results = [r for r in ddgs.text(user_query, max_results=5)]
+        for tag in soup(["script", "style", "nav", "footer", "header", "svg", "form"]):
+            tag.decompose()
 
-      
-        best_context = ""
-        st.write(f"Scraping {len(search_results)} sites concurrently...")
-        
-        with ThreadPoolExecutor(max_workers=5) as executor:
-        
-            future_to_url = {
-                executor.submit(scrape_url, res['href']): res 
-                for res in search_results
-            }
-            
-            completed_count = 0
-            for future in as_completed(future_to_url):
-                res = future_to_url[future]
-                try:
-                    text = future.result()
-                    if text:
-                        completed_count += 1
-                        
-                        status.update(label=f"Scraping... ({completed_count}/{len(search_results)} done)", state="running")
-                        
-                        
-                        best_context += f"Source: {res['title']}\nContent: {text[:4000]}\n\n"
-                except Exception as e:
-                    pass 
-
-        status.update(label="Analysis Complete!", state="complete", expanded=False)
-
-    return best_context, search_results
-
-
-st.title("🔎 Web Search Bot")
-st.caption("Powered by Mistral-7B-v0.2 (32k Context)")
-
-user_input = st.text_input("Enter your question:", placeholder="e.g. What is the latest news about SpaceX Starship?")
-
-if user_input:
-    context, sources = run_ai_search(user_input)
-
-    if context:
-      
-        client = InferenceClient(api_key=HF_TOKEN)
-
-        messages = [
-            {"role": "system", "content": "You are a helpful AI assistant. Answer the user question primarily using the provided context. If the context is irrelevant, say so."},
-            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {user_input}"}
+        paragraphs = [
+            p.get_text(" ", strip=True)
+            for p in soup.find_all("p")
+            if len(p.get_text(strip=True)) > 80
         ]
 
-        
-        st.subheader("Sources")
-        
-        cols = st.columns(5)
-        for i, s in enumerate(sources):
-            with cols[i % 5]:
-                st.markdown(f"**[{i+1}. {s['title'][:20]}...]({s['href']})**")
+        text = " ".join(paragraphs)
+        return text[:MAX_CONTEXT_CHARS]
 
-        st.subheader("Answer")
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response = client.chat_completion(messages, model=LLM_REPO_ID, max_tokens=1024)
-                st.markdown(response.choices[0].message.content)
+    except Exception:
+        return ""
 
-    else:
-        st.error("Could not find enough relevant data. Try a different query.")
+# ---------------- SEARCH ----------------
+def search_and_scrape(q):
+    with DDGS() as ddgs:
+        results = list(ddgs.text(q, max_results=MAX_RESULTS))
+
+    collected = []
+
+    with ThreadPoolExecutor(max_workers=MAX_RESULTS) as ex:
+        futures = {
+            ex.submit(scrape_url, r["href"]): r
+            for r in results
+        }
+
+        for f in as_completed(futures):
+            text = f.result()
+            meta = futures[f]
+            if text:
+                collected.append({
+                    "title": meta["title"],
+                    "url": meta["href"],
+                    "text": text
+                })
+
+    return collected
+
+# ---------------- LLM ----------------
+def ask_llm(context, question):
+    client = InferenceClient(api_key=HF_TOKEN)
+
+    prompt = f"""
+You are a factual assistant.
+Answer ONLY using the context below.
+If context is insufficient, say "Not enough reliable data."
+
+Context:
+{context}
+
+Question:
+{question}
+"""
+
+    for model in [MODEL_PRIMARY, MODEL_FALLBACK]:
+        try:
+            res = client.chat_completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=700
+            )
+            return res.choices[0].message.content
+        except Exception:
+            continue
+
+    return "⚠️ Model unavailable. Try again later."
+
+# ---------------- MAIN FLOW ----------------
+if query:
+    with st.status("🔍 Searching & scraping...", expanded=True):
+        sources = search_and_scrape(query)
+
+    if not sources:
+        st.error("No usable sources found.")
+        st.stop()
+
+    context = ""
+    for i, s in enumerate(sources, 1):
+        context += f"[{i}] {s['title']}\n{s['text']}\n\n"
+
+    st.subheader("📌 Sources")
+    cols = st.columns(len(sources))
+    for i, s in enumerate(sources):
+        cols[i].markdown(f"**[{i+1}. {s['title'][:30]}]({s['url']})**")
+
+    if SHOW_RAW:
+        with st.expander("📄 Scraped Context"):
+            st.text(context)
+
+    st.subheader("🤖 Answer")
+    with st.spinner("Thinking..."):
+        answer = ask_llm(context, query)
+        st.markdown(answer)
